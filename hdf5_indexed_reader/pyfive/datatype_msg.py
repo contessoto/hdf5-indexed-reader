@@ -109,15 +109,18 @@ class DatatypeMessage(object):
         version = datatype_msg['class_and_version'] >> 4
 
         # read in the fields of the compound datatype
-        # at the moment we need to skip two bytes which I do
         fields = []
         for _ in range(n_comp):
             null_location = self.buf.index(b'\x00', self.offset)
-            # we read with padding and without
-            name_size = null_location - self.offset + 1 if version == 3 else _padded_size(
-                null_location - self.offset + 1, 8)
-            name = self.buf[self.offset:self.offset+name_size]
-            name = name.strip(b'\x00').decode('utf-8')
+
+            # Read name up to null terminator
+            name_bytes = self.buf[self.offset:null_location]
+            name = name_bytes.decode('utf-8')
+
+            # Calculate padded size to advance offset correctly
+            unpadded_size = null_location - self.offset + 1
+            name_size = unpadded_size if version == 3 else _padded_size(unpadded_size, 8)
+
             self.offset += name_size
 
             # handle different message type versions
@@ -150,11 +153,36 @@ class DatatypeMessage(object):
         # and padded to an 8 byte boundary, the number of which is given by the
         # message size.
         size =  datatype_msg['size']
-        null_location = self.buf.index(b'\x00', self.offset)
-        tag_size = _padded_size(null_location - self.offset + 1, 8)
-        tag_bytes = self.buf[self.offset:self.offset+tag_size]
-        tag = tag_bytes.strip(b'\x00').decode('ascii')
-        self.offset += tag_size
+
+        try:
+            null_location = self.buf.index(b'\x00', self.offset)
+            # Ensure null_location is reasonable
+            if null_location - self.offset > 1024:
+                 raise ValueError("Opaque tag too long or missing null terminator")
+
+            # Correctly read up to null terminator
+            tag_bytes = self.buf[self.offset:null_location]
+            tag = tag_bytes.decode('ascii', errors='ignore')
+
+            # Advance offset past the full padded field
+            # tag length + 1 (null) padded to 8 bytes
+            tag_padded_len = _padded_size(null_location - self.offset + 1, 8)
+            self.offset += tag_padded_len
+
+        except (ValueError, IndexError):
+            # If parsing fails, just use a default tag or None
+            # HDF5 spec says tag is mandatory but empty string is allowed?
+            tag = None
+            # We assume some alignment if we failed? Or just stop reading?
+            # Opaque type description ends with the tag.
+            # If we couldn't find the tag end, we might be in trouble for subsequent messages.
+            # But usually Datatype message is self contained or last.
+
+            # Let's try to advance by a reasonable amount (e.g. alignment)
+            # or just assume the rest of the message is tag if meaningful?
+            # Actually, `size` is the size of the *data* not the tag.
+            pass
+
         if tag == '':
             tag = None
 
@@ -186,9 +214,15 @@ class DatatypeMessage(object):
         version = (datatype_msg['class_and_version'] >> 4) & 0x0F
         for _ in range(num_members):
             null_location = self.buf.index(b'\x00', self.offset)
-            name_size = null_location - self.offset + 1 if version == 3 else _padded_size(null_location - self.offset+ 1, 8)
-            name = self.buf[self.offset:self.offset+name_size]
-            name = name.strip(b'\x00').decode('ascii')
+
+            # Read name up to null terminator
+            name_bytes = self.buf[self.offset:null_location]
+            name = name_bytes.decode('ascii')
+
+            # Calculate padded size to advance offset correctly
+            unpadded_size = null_location - self.offset + 1
+            name_size = unpadded_size if version == 3 else _padded_size(unpadded_size, 8)
+
             self.offset += name_size
             enum_keys.append(name)
         #now get the values

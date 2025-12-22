@@ -341,9 +341,13 @@ class File(Group):
                                   self._links = self.index[self.name]
 
                           except Exception as e:
+                              import traceback
+                              traceback.print_exc()
                               print(f"Error loading index: {e}")
 
                   except Exception as e:
+                       import traceback
+                       traceback.print_exc()
                        print(f"Error loading index from offset: {e}")
 
     @property

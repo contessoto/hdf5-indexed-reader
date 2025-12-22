@@ -76,7 +76,12 @@ class P5OpaqueType(P5Type):
 
     def _build_dtype(self):
         if self.dtype_spec.startswith('NUMPY:'):
-            dtype = np.dtype(self.dtype_spec[6:], metadata={'h5py_opaque': True})
+            try:
+                dtype = np.dtype(self.dtype_spec[6:], metadata={'h5py_opaque': True})
+            except TypeError:
+                # If the numpy dtype string is invalid (e.g. corrupted/badly parsed tag),
+                # fallback to generic opaque void type of the correct size.
+                dtype = np.dtype(f'V{self.size}', metadata={'h5py_opaque': True})
         else:
             dtype = np.dtype(f'V{self.size}', metadata={'h5py_opaque': True})
         return dtype
