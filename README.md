@@ -1,98 +1,116 @@
-# hdf5-indexed-reader
+# hdf5-indexed-reader (Python)
 
 ## Summary
 
-hdf-indexed-reader is a module for efficient querying of HDF5 files over the web. It enables loading of individual
+`hdf5-indexed-reader` is a Python package for efficient querying of HDF5 files over the web. It enables loading of individual
 datasets from remote files without the need to load the entire file into memory. It works in
 conjunction with the companion project [hdf5-indexer](https://github.com/jrobinso/hdf5-indexer), which annotates
 HDF5 files with an index mapping object path names to file offsets.
 
-The module is built on a fork of [jsfive](https://github.com/usnistgov/jsfive). The fork is available at
-https://github.com/jrobinso/hdf5-indexed-reader.
+This package is a Python port of the original JavaScript module, built on a vendored and modified version of [pyfive](https://github.com/jjhelmus/pyfive).
 
 ## Motivation
 
-The driving use case for this project involves extracting individual datasets for visualization in a web browser
+The driving use case for this project involves extracting individual datasets for visualization (or analysis)
 from large HDF5 files (~200 GB) containing 10s of thousands of individual datasets. Loading such files over
-the web with available solutions present 2 problems
+the web with available solutions present 2 problems:
 
-* The file is too large to load into browser memory in its entirety
-
+* The file is too large to load into memory in its entirety.
 * Finding the file offset for the object desired involves walking a linked list of nodes of containing and sibling
-  objects
-  These nodes can be located anywhere in the file, resulting in an explosion of http range requests which can quickly
-  freeze the application.
+  objects. These nodes can be located anywhere in the file, resulting in an explosion of HTTP range requests which can quickly
+  slow down the application.
 
 This project addresses these issues by (1) using range queries to load slices of the file as needed, and (2) supporting
-a pre-built index for mapping object (groups and datasets) paths to file offsets, negating the need to walking the
-linked list of container objects to build the index at runtime..
+a pre-built index for mapping object (groups and datasets) paths to file offsets, negating the need to walk the
+linked list of container objects to build the index at runtime.
 
-## Limitations
+## Installation
 
-* As this project is based on [jsfive](https://github.com/usnistgov/jsfive), some limitations of that tool apply here,
-  namely not all datatypes are supported.
+Clone the repository and install the dependencies:
 
-* This reader is designed for large HDF5 files containing many datasets. Small files will likely not  
-  benefit from indexing and incremental loading. Additionally, the benefit of indexing is reduced if the number
-  of datasets is small.
-
-## Build
-
-```
-npm run install
-npm run build
+```bash
+git clone <repository-url>
+cd hdf5-indexed-reader
+pip install -r requirements.txt
 ```
 
-The build creates 3 packages
-
-* hdf5-indexed-reader.esm.js - an ES module for use in a web browser
-* hdf5-indexed-reader.node.cjs - a common JS module for use with Node
-* hdf5-indexed-reader.node.mjs - an ES module for use with Node
+Dependencies:
+* `numpy`
+* `requests`
 
 ## Usage
 
-The module exports a single function, ```openH5File( {options} )```. The HDF5 file is specified with one of the
-following
-properties
+The module exports a function `open_h5_file(options)`. The HDF5 file is specified with one of the following options:
 
-* url - url to the hdf5 file
-* path - local file path, **Node only**
-* file - browser `File` or other `Blob` like object
+* `url`: URL to the HDF5 file (supports HTTP/HTTPS).
+* `path`: Local file path.
+* `file`: File-like object (must support `read` and `seek`).
 
-URL fetches are cached to avoid separate individual requests for small amounts of data. The following optional
-properties controls
-the cache
+URL fetches are cached to avoid separate individual requests for small amounts of data. The following optional properties control the cache:
 
-* fetchSize - minimum size in bytes for each http request. Defaults to 2000  (2 kb)
-* maxSize - the maximum number of bytes to cache. Default value is 200000  (200 kb)
+* `fetchSize`: Minimum size in bytes for each HTTP request. Defaults to 2000 (2 kb).
+* `maxSize`: The maximum number of bytes to cache. Default value is 200000 (200 kb).
 
-In cases where it is not possible to modify the HDF5 file [hdf5-indexer](https://github.com/jrobinso/hdf5-indexer) can
-create an external index as a json file.  This file can be used with one of the following properties
+In cases where it is not possible to modify the HDF5 file, [hdf5-indexer](https://github.com/jrobinso/hdf5-indexer) can create an external index as a JSON file. This file can be used with one of the following properties:
 
-* indexURL - url to index json file
-* indexPath - local file path, `node` only
-* indexFile - browser `File` object
+* `indexURL`: URL to index JSON file.
+* `indexPath`: Local file path to index JSON file.
+* `index`: Dictionary containing the index data.
+* `indexOffset`: Byte offset to the index if embedded in the file but not automatically detected.
 
-## Example
+### Example
 
 Load a `Dataset` from a remote HDF5 file and fetch its shape, data type, and values.
 
-```js
-import {openH5File} from "dist/esm/hdf5-indexed-reader.esm.js"
+```python
+from hdf5_indexed_reader import open_h5_file
 
-const hdfFile = await openH5File({
-    url: "https://www.dropbox.com/s/53fbs3le4a65noq/spleen_1chr1rep.indexed.cndb?dl=0",
+# Open remote file
+hdf_file = open_h5_file({
+    "url": "https://www.dropbox.com/s/53fbs3le4a65noq/spleen_1chr1rep.indexed.cndb?dl=0",
 })
 
-const spatialPostionDataset = await hdfFile.get('/replica10_chr1/spatial_position/1149')
-const shape = await spatialPostionDataset.shape
-const dtype = await spatialPostionDataset.dtype
-const values = await spatialPostionDataset.value
+# Access dataset
+# Note: You can use dictionary-style access or path strings
+dataset = hdf_file['/replica10_chr1/spatial_position/1149']
 
+# Get properties
+print("Shape:", dataset.shape)
+print("Dtype:", dataset.dtype)
+
+# Fetch values (returns a numpy array)
+values = dataset[:]
+print("Values shape:", values.shape)
+print("First value:", values[0])
 ```
 
-See examples folder for node cjs and es examples.
+## CLI Usage
 
+A helper script `run_reader.py` is included to easily test and inspect HDF5 files from the command line.
 
+```bash
+# Print root keys of a remote file
+python run_reader.py --url "https://www.dropbox.com/s/53fbs3le4a65noq/spleen_1chr1rep.indexed.cndb?dl=0"
 
+# Fetch and preview a specific dataset
+python run_reader.py \
+  --url "https://www.dropbox.com/s/53fbs3le4a65noq/spleen_1chr1rep.indexed.cndb?dl=0" \
+  --dataset /replica10_chr1/spatial_position/1
+```
 
+## Testing
+
+Unit tests are provided using Python's `unittest` framework.
+
+```bash
+# Run all tests
+python -m unittest discover . "test_*.py"
+
+# Run specific remote test
+python test_remote.py
+```
+
+## Limitations
+
+* As this project relies on a modified version of `pyfive`, it inherits `pyfive`'s limitations (e.g., read-only support, limited support for some complex HDF5 features compared to `h5py` which binds to the C library).
+* Designed primarily for large HDF5 files with many datasets where index-based access significantly improves performance over network connections.

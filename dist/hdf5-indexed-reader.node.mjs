@@ -4817,7 +4817,7 @@ function create_nested_array(value, shape) {
 async function openH5File$1(options) {
 
     // Some clients (notably igv-webapp) pass a File reference in the url field.  Fix this
-    if (options.url && isBlobLike(options.url)) {
+    if(options.url && isBlobLike(options.url)) {
         options.file = options.url;
         options.url = undefined;
     }
